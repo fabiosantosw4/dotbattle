@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Waiting Room</title>
+  <style>
+    body { font-family: Arial; background:#1a1a1a; color:white; display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; }
+    #playerList { margin-top:20px; list-style:none; padding:0; }
+    #startGame { margin-top:20px; padding:10px 20px; background:#4CAF50; border:none; color:white; font-size:16px; cursor:pointer; border-radius:8px; }
+    #startGame:disabled { background: gray; cursor:not-allowed; }
+  </style>
+</head>
+<body>
+  <h1>Waiting Room</h1>
+  <h2 id="roomCode">Room: ...</h2>
+  <ul id="playerList"></ul>
+  <button id="startGame">Start Game</button>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    const name = localStorage.getItem("playerName");
+    const isHost = localStorage.getItem("isHost") === "true";
+    let roomId = localStorage.getItem("roomId") || null;
+
+    const startBtn = document.getElementById("startGame");
+    startBtn.disabled = !isHost;
+
+    // Host creates room now
+    if (isHost) {
+      socket.emit("createRoom", name);
+    } else if (roomId) {
+      // Non-host joins room
+      socket.emit("joinRoom", { roomId, playerName: name });
+    } else {
+      alert("No room info!");
+    }
+
+    socket.on("roomCreated", ({ roomId: newId }) => {
+      roomId = newId;
+      localStorage.setItem("roomId", roomId);
+      document.getElementById("roomCode").innerText = "Room: " + roomId;
+    });
+
+    socket.on("joinedRoom", ({ roomId: newId }) => {
+      roomId = newId;
+      localStorage.setItem("roomId", roomId);
+      document.getElementById("roomCode").innerText = "Room: " + roomId;
+    });
+
+    socket.on("roomPlayers", (players) => {
+      const list = document.getElementById("playerList");
+      list.innerHTML = "";
+      players.forEach(p => {
+        const li = document.createElement("li");
+        li.textContent = p.name + (p.isHost ? " (Host)" : "");
+        list.appendChild(li);
+      });
+    });
+
+    socket.on("gameStarted", () => {
+      window.location.href = `/game.html?room=${roomId}`;
+    });
+
+    socket.on("joinError", msg => alert(msg));
+    socket.on("errorMsg", msg => alert(msg));
+
+    startBtn.onclick = () => {
+      if (roomId) socket.emit("startGame", roomId);
+    };
+ 
+
+  </script>
+</body>
+</html>
