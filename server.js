@@ -286,7 +286,7 @@ setInterval(() => {
 
 
     // Randomly spawn power-ups
-    if (Math.random() < 0.0012) {
+    if (Math.random() < 0.0017) {
       const types = ["speed", "shoot", "explosive"];
       let x, y;
       let safe = false;
