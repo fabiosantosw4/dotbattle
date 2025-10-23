@@ -531,11 +531,18 @@
       const me = players[socket.id];
       if (!me) return;
       const active = [];
-      if (me.speedMultiplier > 1) active.push(`Speed Boost (Cyan) - ${Math.ceil(me.powerUpTimer / 60)}s`);
-      if (me.shootMultiplier > 1) active.push(`Fast Shoot (Orange) - ${Math.ceil(me.powerUpTimer / 60)}s`);
-      if (me.explosive) active.push(`Explosive Shots (Red) - ${Math.ceil(me.powerUpTimer / 60)}s`);
+      const fps = 60;
+
+      if (me.timers) {
+        if (me.timers.speed > 0) active.push(`Speed Boost (Cyan) - ${Math.ceil(me.timers.speed / fps)}s`);
+        if (me.timers.shoot > 0) active.push(`Fast Shoot (Orange) - ${Math.ceil(me.timers.shoot / fps)}s`);
+        if (me.timers.explosive > 0) active.push(`Explosive Shots (Red) - ${Math.ceil(me.timers.explosive / fps)}s`);
+      }
+
       powerUpInfo.innerHTML = active.join("<br>") || "No active power-ups";
     }
+
+
 
 
     function lerp(a, b, t) { return a + (b - a) * t; }

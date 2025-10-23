@@ -45,14 +45,40 @@ setInterval(() => {
               const prevX = p.x - p.vx;
               const prevY = p.y - p.vy;
 
+              // Reverse velocity if hitting obstacle side
               if (prevX + projRadius <= o.x || prevX - projRadius >= o.x + o.w) p.vx *= -1;
               if (prevY + projRadius <= o.y || prevY - projRadius >= o.y + o.h) p.vy *= -1;
 
               p.bounced = true;
             } else {
-              p.hit = true; // remove after second hit
+              // Remove projectile after second hit
+              p.hit = true;
             }
-          } else {
+
+            // Check collision with players (excluding owner)
+            for (const id in room.players) {
+              const player = room.players[id];
+              if (player.health <= 0) continue;
+              if (id === p.ownerId) continue;
+
+              const dx = player.x - p.x;
+              const dy = player.y - p.y;
+              const dist = Math.hypot(dx, dy);
+              const PLAYER_RADIUS = 32.5;
+
+              if (dist < projRadius + PLAYER_RADIUS) {
+                // Damage player
+                player.health -= 20;
+                p.hit = true;
+                if (player.health <= 0) {
+                  // Award score to shooter
+                  if (room.players[p.ownerId]) room.players[p.ownerId].score += 1;
+                  resetPlayer(player);
+                }
+              }
+            }
+          }
+          else {
             // Explosive: explode on first wall hit
             triggerExplosion(room, p.x, p.y, 80, p.ownerId);
             p.hit = true;
@@ -90,9 +116,14 @@ setInterval(() => {
             // Normal projectile: damage player directly
             player.health -= 20;
             p.hit = true;
-            if (player.health <= 0) resetPlayer(player);
+            if (player.health <= 0) {
+              // Award score to the shooter
+              if (room.players[p.ownerId]) room.players[p.ownerId].score += 1;
+              resetPlayer(player);
+            }
           }
         }
+
       }
 
 
@@ -141,23 +172,26 @@ setInterval(() => {
         if (dist < playerRadius + pu.size) {
           if (!p.timers) p.timers = {}; // initialize timers object
 
+          const duration = 600; // 10 seconds at 60 FPS
+
           switch (pu.type) {
             case "speed":
               p.speedMultiplier = 2;
-              p.timers.speed = 600;
+              p.timers.speed = duration;
               break;
             case "shoot":
               p.shootMultiplier = 3;
-              p.timers.shoot = 600;
+              p.timers.shoot = duration;
               break;
             case "explosive":
               p.explosive = true;
-              p.timers.explosive = 600;
+              p.timers.explosive = duration;
               break;
           }
 
           pu.collected = true;
         }
+
       }
     });
 
@@ -227,12 +261,18 @@ setInterval(() => {
     // Reduce power-up timer
     for (const id in room.players) {
       const p = room.players[id];
-      if (p.powerUpTimer > 0) {
-        p.powerUpTimer--;
-        if (p.powerUpTimer === 0) {
-          p.speedMultiplier = 1;
-          p.shootMultiplier = 1;
-          p.SHOOTcd = 450;
+      if (!p.timers) p.timers = {};
+
+      // Reduce each active power-up timer
+      for (const type in p.timers) {
+        p.timers[type]--;
+        if (p.timers[type] <= 0) {
+          // reset effect when timer expires
+          if (type === "speed") p.speedMultiplier = 1;
+          if (type === "shoot") p.shootMultiplier = 1;
+          if (type === "explosive") p.explosive = false;
+
+          delete p.timers[type];
         }
       }
 
@@ -243,6 +283,7 @@ setInterval(() => {
         break;
       }
     }
+
 
     // Randomly spawn power-ups
     if (Math.random() < 0.0012) {
