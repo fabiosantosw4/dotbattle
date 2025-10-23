@@ -1,10 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <title>Dot Battle</title>
   <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
 
   <!-- MENU -->
@@ -58,7 +60,7 @@
 
   <!-- GAME -->
   <section id="game">
-    <canvas id="gameCanvas" width="1800" height="1300"></canvas>
+    <canvas id="gameCanvas"></canvas>
 
     <!-- In-game chat overlay -->
     <div id="gameChat">
@@ -72,468 +74,554 @@
   </section>
 
 
-<script src="/socket.io/socket.io.js"></script>
-<script>
-  // --- SOUND EFFECTS ---
-const sounds = {
-  shoot: new Audio("/assets/sounds/shoot.mp3"),
-  death: new Audio("/assets/sounds/death.mp3"),
-  powerup: new Audio("/assets/sounds/powerup.mp3"),
-  explosive: new Audio("/assets/sounds/explosion.mp3")
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    // --- SOUND EFFECTS ---
+    const sounds = {
+      shoot: new Audio("/assets/sounds/shoot.mp3"),
+      death: new Audio("/assets/sounds/death.mp3"),
+      powerup: new Audio("/assets/sounds/powerup.mp3"),
+      explosive: new Audio("/assets/sounds/explosion.mp3")
 
-};
-
-
-const socket = io();
-
-// Sections
-const menu = document.getElementById("menu");
-const lobby = document.getElementById("lobby");
-const gameSec = document.getElementById("game");
-
-// Menu elements
-const nicknameCreate = document.getElementById("nicknameCreate");
-const avatarCreateInput = document.getElementById("avatarCreate");
-const nicknameJoin = document.getElementById("nicknameJoin");
-const avatarJoinInput = document.getElementById("avatarJoin");
-const createRoomBtn = document.getElementById("createRoomBtn");
-const joinRoomBtn = document.getElementById("joinRoomBtn");
-const roomIdInput = document.getElementById("roomIdInput");
-
-// Lobby elements
-const roomIdDisplay = document.getElementById("roomIdDisplay");
-const playerList = document.getElementById("playerList");
-const startGameBtn = document.getElementById("startGameBtn");
-
-// Game elements
-const canvas = document.getElementById("gameCanvas");
-const ctx = canvas.getContext("2d");
-const scoreBoard = document.getElementById("scoreBoard");
-const powerUpInfo = document.getElementById("powerUpInfo");
-const gameOverMsg = document.getElementById("gameOverMsg");
-
-let currentRoom = null;
-let isHost = false;
-let players = {};
-let powerUps = [];
-let projectiles = [];
-let canShoot = false;
-let gameEnded = false;
-
-let avatarDataCreate = null;
-let avatarDataJoin = null;
-
-// --- CROPPING & CIRCULAR AVATAR ---
-function cropAvatarToCircle(file, size = 128, callback, previewEl) {
-  const reader = new FileReader();
-  reader.onload = e => {
-    const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = size;
-      canvas.height = size;
-      const ctx = canvas.getContext("2d");
-
-      // Crop centered square
-      const minSide = Math.min(img.width, img.height);
-      const sx = (img.width - minSide) / 2;
-      const sy = (img.height - minSide) / 2;
-
-      // Draw circular clipped image
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(size/2, size/2, size/2, 0, Math.PI*2);
-      ctx.closePath();
-      ctx.clip();
-      ctx.drawImage(img, sx, sy, minSide, minSide, 0, 0, size, size);
-      ctx.restore();
-
-      const dataUrl = canvas.toDataURL("image/png");
-      callback(dataUrl);
-
-      if(previewEl){
-        previewEl.src = dataUrl;
-        previewEl.style.display = "block";
-      }
     };
-    img.src = e.target.result;
-  };
-  reader.readAsDataURL(file);
-}
-
-// --- CREATE AVATAR ---
-avatarCreateInput.addEventListener("change", e => {
-  const file = e.target.files[0];
-  if(!file) return;
-  const preview = document.getElementById("avatarPreviewCreate");
-  cropAvatarToCircle(file, 128, dataUrl => avatarDataCreate = dataUrl, preview);
-});
-
-// --- JOIN AVATAR ---
-avatarJoinInput.addEventListener("change", e => {
-  const file = e.target.files[0];
-  if(!file) return;
-  const preview = document.getElementById("avatarPreviewJoin");
-  cropAvatarToCircle(file, 128, dataUrl => avatarDataJoin = dataUrl, preview);
-});
-
-// --- VALID NICKNAME ---
-function getValidName(name){
-  name = name.trim();
-  if(!name) name = "Player";
-  if(name.length > 9) name = name.substr(0,6);
-  return name;
-}
-
-// --- CREATE / JOIN ROOM ---
-createRoomBtn.onclick = () => {
-  const name = getValidName(nicknameCreate.value);
-  isHost = true;
-  socket.emit("createRoom", { name, avatar: avatarDataCreate });
-};
-
-joinRoomBtn.onclick = () => {
-  const name = getValidName(nicknameJoin.value);
-  const roomId = roomIdInput.value.trim().toUpperCase();
-  if(!roomId) return alert("Enter Room ID");
-  isHost = false;
-  socket.emit("joinRoom", { roomId, playerName: name, avatar: avatarDataJoin });
-};
-
-// --- SOCKET EVENTS ---
-socket.on("roomCreated", ({ roomId }) => { currentRoom = roomId; showLobby(); });
-socket.on("joinedRoom", ({ roomId }) => { currentRoom = roomId; showLobby(); });
-
-socket.on("roomPlayers", (roomPlayers) => {
-  playerList.innerHTML = "";
-  roomPlayers.forEach(p => {
-    const li = document.createElement("li");
-    li.textContent = p.name + (p.isHost ? " (Host)" : "");
-    playerList.appendChild(li);
-  });
-});
 
 
-socket.on("gameStarted", () => { 
-  lobby.classList.remove("active"); 
-  gameSec.classList.add("active"); 
-  gameChat.style.display = "block"; // <-- make sure chat is visible
-  startGame(); 
-});
+    const socket = io();
 
+    // Sections
+    const menu = document.getElementById("menu");
+    const lobby = document.getElementById("lobby");
+    const gameSec = document.getElementById("game");
 
-socket.on("gameOver", ({ winner }) => {
-  gameEnded = true;
-  canShoot = false;
-  gameOverMsg.style.display = "block";
-  gameOverMsg.textContent = winner ? `Winner: ${winner}` : "Game Over";
+    // Menu elements
+    const nicknameCreate = document.getElementById("nicknameCreate");
+    const avatarCreateInput = document.getElementById("avatarCreate");
+    const nicknameJoin = document.getElementById("nicknameJoin");
+    const avatarJoinInput = document.getElementById("avatarJoin");
+    const createRoomBtn = document.getElementById("createRoomBtn");
+    const joinRoomBtn = document.getElementById("joinRoomBtn");
+    const roomIdInput = document.getElementById("roomIdInput");
 
-});
+    // Lobby elements
+    const roomIdDisplay = document.getElementById("roomIdDisplay");
+    const playerList = document.getElementById("playerList");
+    const startGameBtn = document.getElementById("startGameBtn");
 
-// --- LOBBY ---
-function showLobby(){
-  menu.classList.remove("active");
-  lobby.classList.add("active");
-  roomIdDisplay.textContent = "Room: " + currentRoom;
-  startGameBtn.disabled = !isHost;
-}
+    // Game elements
+    const canvas = document.getElementById("gameCanvas");
+    // --- RESPONSIVE CANVAS ---
+    function resizeCanvas() {
+      const gameWidth = 1800;
+      const gameHeight = 1300;
 
-startGameBtn.onclick = () => {
-  if(currentRoom && isHost) socket.emit("startGame", currentRoom);
-};
+      // Match window aspect ratio
+      const scale = Math.min(window.innerWidth / gameWidth, window.innerHeight / gameHeight);
 
-// --- GAME STATE ---
-let prevPowerUps = []; // track previous state for power-up collection
+      canvas.width = gameWidth;
+      canvas.height = gameHeight;
 
-socket.on("state", state => {
-  players = state.players;
-  projectiles = state.projectiles;
-  powerUps = state.powerUps;
-
-  // --- Handle player deaths ---
-  for (const id in players) {
-    const p = players[id];
-    if (p.health <= 0 && !p._deadSoundPlayed) {
-      if (id === socket.id) sounds.death.currentTime = 0, sounds.death.play();
-      p._deadSoundPlayed = true;
+      // Scale visually using CSS (not by changing resolution)
+      canvas.style.width = gameWidth * scale + "px";
+      canvas.style.height = gameHeight * scale + "px";
+      canvas.style.display = "block";
+      canvas.style.margin = "0 auto";
     }
-  }
 
-  // --- Handle power-up collection ---
-  powerUps.forEach(pu => {
-    if (pu.collected && !pu._played) {
-      sounds.powerup.currentTime = 0;
-      sounds.powerup.play();
-      pu._played = true; // mark it so it doesn’t play again
+    window.addEventListener("resize", resizeCanvas);
+    resizeCanvas();
+
+
+
+    const ctx = canvas.getContext("2d");
+    const scoreBoard = document.getElementById("scoreBoard");
+    const powerUpInfo = document.getElementById("powerUpInfo");
+    const gameOverMsg = document.getElementById("gameOverMsg");
+
+    let currentRoom = null;
+    let isHost = false;
+    let players = {};
+    let stateObstacles = [];
+    let powerUps = [];
+    let projectiles = [];
+    let canShoot = false;
+    let gameEnded = false;
+    let explosions = [];
+
+    let avatarDataCreate = null;
+    let avatarDataJoin = null;
+
+    // --- CROPPING & CIRCULAR AVATAR ---
+    function cropAvatarToCircle(file, size = 128, callback, previewEl) {
+      const reader = new FileReader();
+      reader.onload = e => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          canvas.width = size;
+          canvas.height = size;
+          const ctx = canvas.getContext("2d");
+
+          // Crop centered square
+          const minSide = Math.min(img.width, img.height);
+          const sx = (img.width - minSide) / 2;
+          const sy = (img.height - minSide) / 2;
+
+          // Draw circular clipped image
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
+          ctx.closePath();
+          ctx.clip();
+          ctx.drawImage(img, sx, sy, minSide, minSide, 0, 0, size, size);
+          ctx.restore();
+
+          const dataUrl = canvas.toDataURL("image/png");
+          callback(dataUrl);
+
+          if (previewEl) {
+            previewEl.src = dataUrl;
+            previewEl.style.display = "block";
+          }
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
     }
-  });
 
-  // --- Explosive projectile sound ---
-  projectiles.forEach(p => {
-    const shooter = players[p.ownerId];
-    if(shooter && shooter.explosive && p.hit && !p._explosiveSoundPlayed){
+    // --- CREATE AVATAR ---
+    avatarCreateInput.addEventListener("change", e => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const preview = document.getElementById("avatarPreviewCreate");
+      cropAvatarToCircle(file, 128, dataUrl => avatarDataCreate = dataUrl, preview);
+    });
+
+    // --- JOIN AVATAR ---
+    avatarJoinInput.addEventListener("change", e => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const preview = document.getElementById("avatarPreviewJoin");
+      cropAvatarToCircle(file, 128, dataUrl => avatarDataJoin = dataUrl, preview);
+    });
+
+    // --- VALID NICKNAME ---
+    function getValidName(name) {
+      name = name.trim();
+      if (!name) name = "Player";
+      if (name.length > 9) name = name.substr(0, 6);
+      return name;
+    }
+
+    // --- CREATE / JOIN ROOM ---
+    createRoomBtn.onclick = () => {
+      const name = getValidName(nicknameCreate.value);
+      isHost = true;
+      socket.emit("createRoom", { name, avatar: avatarDataCreate });
+    };
+
+    joinRoomBtn.onclick = () => {
+      const name = getValidName(nicknameJoin.value);
+      const roomId = roomIdInput.value.trim().toUpperCase();
+      if (!roomId) return alert("Enter Room ID");
+      isHost = false;
+      socket.emit("joinRoom", { roomId, playerName: name, avatar: avatarDataJoin });
+    };
+
+    // --- SOCKET EVENTS ---
+    socket.on("roomCreated", ({ roomId }) => { currentRoom = roomId; showLobby(); });
+    socket.on("joinedRoom", ({ roomId }) => { currentRoom = roomId; showLobby(); });
+
+    socket.on("roomPlayers", (roomPlayers) => {
+      playerList.innerHTML = "";
+      roomPlayers.forEach(p => {
+        const li = document.createElement("li");
+        li.textContent = p.name + (p.isHost ? " (Host)" : "");
+        playerList.appendChild(li);
+      });
+    });
+
+
+    socket.on("gameStarted", () => {
+      lobby.classList.remove("active");
+      gameSec.classList.add("active");
+      gameChat.style.display = "block"; // <-- make sure chat is visible
+      startGame();
+    });
+
+
+    socket.on("gameOver", ({ winner }) => {
+      gameEnded = true;
+      canShoot = false;
+      gameOverMsg.style.display = "block";
+      gameOverMsg.textContent = winner ? `Winner: ${winner}` : "Game Over";
+
+    });
+
+    // --- LOBBY ---
+    function showLobby() {
+      menu.classList.remove("active");
+      lobby.classList.add("active");
+      roomIdDisplay.textContent = "Room: " + currentRoom;
+      startGameBtn.disabled = !isHost;
+    }
+
+    startGameBtn.onclick = () => {
+      if (currentRoom && isHost) socket.emit("startGame", currentRoom);
+    };
+
+    // --- GAME STATE ---
+    let prevPowerUps = []; // track previous state for power-up collection
+
+    socket.on("state", state => {
+      players = state.players;
+      projectiles = state.projectiles;
+      powerUps = state.powerUps;
+      stateObstacles = state.obstacles || [];
+      explosions = state.explosions || [];
+
+      // --- Handle player deaths ---
+      for (const id in players) {
+        const p = players[id];
+        if (p.health <= 0 && !p._deadSoundPlayed) {
+          if (id === socket.id) sounds.death.currentTime = 0, sounds.death.play();
+          p._deadSoundPlayed = true;
+        }
+      }
+
+      // --- Handle power-up collection ---
+      powerUps.forEach(pu => {
+        if (pu.collected && !pu._played) {
+          if (pu.type === "explosive") {
+            const me = players[socket.id];
+            if (me) me.explosive = true; // now your shots become explosive
+          }
+          sounds.powerup.currentTime = 0;
+          sounds.powerup.play();
+          pu._played = true;
+        }
+      });
+
+
+      // --- Explosive projectile sound ---
+      projectiles.forEach(p => {
+        const shooter = players[p.ownerId];
+        if (shooter && shooter.explosive && p.hit && !p._explosiveSoundPlayed) {
+          sounds.explosive.currentTime = 0;
+          sounds.explosive.play();
+          p._explosiveSoundPlayed = true; // prevent replaying same explosion
+        }
+      });
+      stateObstacles = state.obstacles || [];
+    });
+
+
+
+    // --- INPUT ---
+    const keys = {};
+    document.addEventListener("keydown", e => { if (!gameEnded) keys[e.key] = true; });
+    document.addEventListener("keyup", e => { if (!gameEnded) keys[e.key] = false; });
+
+    canvas.addEventListener("click", e => {
+      if (!canShoot || gameEnded) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const mouseX = (e.clientX - rect.left) * scaleX;
+      const mouseY = (e.clientY - rect.top) * scaleY;
+
+      const me = players[socket.id];
+      socket.emit("shoot", {
+        roomId: currentRoom,
+        targetX: mouseX,
+        targetY: mouseY,
+        explosive: me?.explosive || false // send explosive flag to server
+      });
+    });
+    socket.on("explosions", data => {
+      console.log("Explosions from server:", data);
+      explosions = data; // update local array
+    });
+
+    socket.on("playExplosionSound", ({ x, y }) => {
       sounds.explosive.currentTime = 0;
       sounds.explosive.play();
-      p._explosiveSoundPlayed = true; // prevent replaying same explosion
+    });
+    // 🔊 Play shoot sound only when server confirms a valid shot
+    socket.on("playerShot", ({ shooterId }) => {
+      if (shooterId === socket.id) {
+        sounds.shoot.currentTime = 0;
+        sounds.shoot.play();
+      }
+    });
+
+
+    // --- CLIENT PREDICTION ---
+    let predictedX = 0, predictedY = 0;
+    function initPrediction() {
+      const me = players[socket.id];
+      if (!me) return;
+      predictedX = me.x; predictedY = me.y;
     }
-  });
-});
+    function updatePrediction() {
+      if (gameEnded) return;
+      const me = players[socket.id];
+      if (!me) return;
 
+      const baseSpeed = 2;
+      let dx = 0, dy = 0;
+      if (keys["ArrowUp"]) dy -= baseSpeed * me.speedMultiplier;
+      if (keys["ArrowDown"]) dy += baseSpeed * me.speedMultiplier;
+      if (keys["ArrowLeft"]) dx -= baseSpeed * me.speedMultiplier;
+      if (keys["ArrowRight"]) dx += baseSpeed * me.speedMultiplier;
 
+      let newX = me.x + dx;
+      let newY = me.y + dy;
+      const radius = 32.5; // half of avatarSize = 65/2
 
-// --- INPUT ---
-const keys = {};
-document.addEventListener("keydown", e => { if(!gameEnded) keys[e.key]=true; });
-document.addEventListener("keyup", e => { if(!gameEnded) keys[e.key]=false; });
+      // --- CANVAS BOUNDARY COLLISION ---
+      newX = Math.max(radius, Math.min(canvas.width - radius, newX));
+      newY = Math.max(radius, Math.min(canvas.height - radius, newY));
 
-  canvas.addEventListener("click", e => {
-    if(!canShoot || gameEnded) return;
-    const rect = canvas.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
-    socket.emit("shoot", { roomId: currentRoom, targetX: mouseX, targetY: mouseY });
-  });
+      // --- PLAYER COLLISION ---
+      for (const id in players) {
+        if (id === socket.id) continue;
+        const p = players[id];
+        const otherRadius = 32.5;
+        const distX = newX - p.x;
+        const distY = newY - p.y;
+        const distance = Math.hypot(distX, distY);
+        const minDist = radius + otherRadius;
+        if (distance < minDist) {
+          // Push back along the collision vector
+          const overlap = minDist - distance;
+          const angle = Math.atan2(distY, distX);
+          newX += Math.cos(angle) * overlap;
+          newY += Math.sin(angle) * overlap;
+        }
+      }
 
-  // 🔊 Play shoot sound only when server confirms a valid shot
-  socket.on("playerShot", ({ shooterId }) => {
-    if (shooterId === socket.id) {
-      sounds.shoot.currentTime = 0;
-      sounds.shoot.play();
+      // Apply updated position
+      me.x = newX;
+      me.y = newY;
+
+      // Send updated keys to server
+      socket.emit("move", { roomId: currentRoom, keys });
     }
-  });
 
 
-// --- CLIENT PREDICTION ---
-let predictedX=0, predictedY=0;
-function initPrediction(){
-  const me = players[socket.id];
-  if(!me) return;
-  predictedX = me.x; predictedY = me.y;
-}
-function updatePrediction(){
-  if(gameEnded) return;
-  const me = players[socket.id];
-  if(!me) return;
+    // --- DRAW ---
+    // Global avatar cache
+    const playerImages = {};
 
-  const baseSpeed = 2;
-  let dx = 0, dy = 0;
-  if(keys["ArrowUp"]) dy -= baseSpeed * me.speedMultiplier;
-  if(keys["ArrowDown"]) dy += baseSpeed * me.speedMultiplier;
-  if(keys["ArrowLeft"]) dx -= baseSpeed * me.speedMultiplier;
-  if(keys["ArrowRight"]) dx += baseSpeed * me.speedMultiplier;
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  let newX = me.x + dx;
-  let newY = me.y + dy;
-  const radius = 32.5; // half of avatarSize = 65/2
+      // --- Power-ups ---
+      powerUps.forEach(p => {
+        ctx.fillStyle = p.type === "speed" ? "cyan" :
+          p.type === "shoot" ? "orange" :
+            p.type === "explosive" ? "red" : "white";
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+      });
 
-  // --- CANVAS BOUNDARY COLLISION ---
-  newX = Math.max(radius, Math.min(canvas.width - radius, newX));
-  newY = Math.max(radius, Math.min(canvas.height - radius, newY));
+      // --- Obstacles ---
+      if (stateObstacles && stateObstacles.length > 0) {
+        ctx.save();
+        ctx.globalAlpha = 0.6;
+        ctx.fillStyle = "cyan";
+        ctx.strokeStyle = "white";
+        ctx.lineWidth = 2;
+        stateObstacles.forEach(o => {
+          ctx.fillRect(o.x, o.y, o.w, o.h);
+          ctx.strokeRect(o.x, o.y, o.w, o.h);
+        });
+        ctx.restore();
+      }
 
-  // --- PLAYER COLLISION ---
-  for(const id in players){
-    if(id === socket.id) continue;
-    const p = players[id];
-    const otherRadius = 32.5;
-    const distX = newX - p.x;
-    const distY = newY - p.y;
-    const distance = Math.hypot(distX, distY);
-    const minDist = radius + otherRadius;
-    if(distance < minDist){
-      // Push back along the collision vector
-      const overlap = minDist - distance;
-      const angle = Math.atan2(distY, distX);
-      newX += Math.cos(angle) * overlap;
-      newY += Math.sin(angle) * overlap;
+      // --- Projectiles ---
+      projectiles.forEach(b => {
+        ctx.fillStyle = b.explosive ? "orange" : "red";
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, b.explosive ? 10 : 5, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      // --- Players ---
+      for (const id in players) {
+        const p = players[id];
+        let drawX = p.x, drawY = p.y;
+
+        if (id === socket.id) {
+          predictedX = lerp(predictedX, p.x, 0.2);
+          predictedY = lerp(predictedY, p.y, 0.2);
+          drawX = predictedX;
+          drawY = predictedY;
+        }
+
+        const avatarSize = 65;
+        const radius = avatarSize / 2;
+
+        // Draw avatar or colored circle
+        if (p.avatar) {
+          if (!playerImages[id]) {
+            const img = new Image();
+            img.src = p.avatar;
+            playerImages[id] = img;
+          }
+          const img = playerImages[id];
+          if (img.complete) ctx.drawImage(img, drawX - radius, drawY - radius, avatarSize, avatarSize);
+        } else {
+          ctx.fillStyle = p.color || "white";
+          ctx.beginPath();
+          ctx.arc(drawX, drawY, radius, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // Health bar
+        ctx.fillStyle = "red";
+        ctx.fillRect(drawX - radius, drawY - radius - 10, avatarSize, 5);
+        ctx.fillStyle = "lime";
+        ctx.fillRect(drawX - radius, drawY - radius - 10, avatarSize * (p.health / 100), 5);
+
+        // Name
+        ctx.fillStyle = "white";
+        ctx.font = "18px Orbitron, Arial";
+        const textWidth = ctx.measureText(p.name).width;
+        ctx.fillText(p.name, drawX - textWidth / 2, drawY - 50);
+      }
+
+      explosions.forEach(exp => {
+        const r = exp.radius || 50;
+        const alpha = Math.max(0, exp.timer / 20); // fade out: 1 → 0
+
+        ctx.save();
+        ctx.globalAlpha = alpha * 0.8; // multiply by 0.8 for overall transparency
+        ctx.shadowColor = "orange";
+        ctx.shadowBlur = 20;
+        ctx.fillStyle = "orange";
+        ctx.beginPath();
+        ctx.arc(exp.x, exp.y, r, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = "yellow";
+        ctx.stroke();
+
+        ctx.restore();
+      });
+
+
+
+
+
+
+      // --- UI ---
+      drawScoreBoard();
+      drawPowerUpInfo();
     }
-  }
-
-  // Apply updated position
-  me.x = newX;
-  me.y = newY;
-
-  // Send updated keys to server
-  socket.emit("move", { roomId: currentRoom, keys });
-}
 
 
-// --- DRAW ---
-function draw(){
-  ctx.clearRect(0,0,canvas.width,canvas.height);
 
-  // Power-ups
-  powerUps.forEach(p=>{
-    ctx.fillStyle = p.type==="speed"?"cyan":"orange";
-    ctx.beginPath();
-    ctx.arc(p.x,p.y,p.size,0,Math.PI*2);
-    ctx.fill();
-  });
 
-  // Players
-// --- DRAW PLAYERS ---
-// --- AVATAR IMAGE CACHE ---
-const playerImages = {}; // global cache for player avatars
-
-for (const id in players) {
-  const p = players[id];
-  let drawX = p.x, drawY = p.y;
-
-  if (id === socket.id) {
-    predictedX = lerp(predictedX, p.x, 0.2);
-    predictedY = lerp(predictedY, p.y, 0.2);
-    drawX = predictedX;
-    drawY = predictedY;
-  }
-
-  const avatarSize = 65;
-  const radius = avatarSize / 2;
-
-  // Load and cache cropped avatar
-  if (p.avatar) {
-    if (!playerImages[id]) {
-      const img = new Image();
-      img.src = p.avatar; // already circular
-      playerImages[id] = img;
+    function drawScoreBoard() {
+      const list = Object.values(players).sort((a, b) => b.score - b.score)
+        .map(p => `${p.name}: ${p.score}`);
+      scoreBoard.innerHTML = list.join("<br>");
     }
-    const img = playerImages[id];
-    if(img.complete) ctx.drawImage(img, drawX - radius, drawY - radius, avatarSize, avatarSize);
-  } else {
-    ctx.fillStyle = p.color;
-    ctx.beginPath();
-    ctx.arc(drawX, drawY, radius, 0, Math.PI*2);
-    ctx.fill();
-  }
 
-  // Health bar
-  ctx.fillStyle = "red";
-  ctx.fillRect(drawX - radius, drawY - radius - 10, avatarSize, 5);
-  ctx.fillStyle = "lime";
-  ctx.fillRect(drawX - radius, drawY - radius - 10, avatarSize * (p.health / 100), 5);
-
-  // Name
-  ctx.fillStyle = "white";
-  ctx.font = "18px Arial";
-  const textWidth = ctx.measureText(p.name).width;
-  ctx.fillText(p.name, drawX - textWidth / 2, drawY - 50);
-}
-
-
-
-  // Projectiles
-  projectiles.forEach(b=>{
-    if(b.explosive){
-      ctx.fillStyle="orange";
-      ctx.beginPath();
-      ctx.arc(b.x, b.y, 10,0,Math.PI*2); // bigger radius for explosive
-      ctx.fill();
-    } else {
-      ctx.fillStyle="red";
-      ctx.beginPath();
-      ctx.arc(b.x,b.y,5,0,Math.PI*2);
-      ctx.fill();
+    function drawPowerUpInfo() {
+      const me = players[socket.id];
+      if (!me) return;
+      const active = [];
+      if (me.speedMultiplier > 1) active.push("Speed Boost (Cyan)");
+      if (me.shootMultiplier > 1) active.push("Fast Shoot (Orange)");
+      if (me.explosive) active.push("Explosive Shots (Red)");
+      powerUpInfo.innerHTML = active.join("<br>") || "No active power-ups";
     }
-  });
 
 
-  drawScoreBoard();
-  drawPowerUpInfo();
-}
+    function lerp(a, b, t) { return a + (b - a) * t; }
 
-function drawScoreBoard(){
-  const list = Object.values(players).sort((a,b)=>b.score-b.score)
-                 .map(p=>`${p.name}: ${p.score}`);
-  scoreBoard.innerHTML = list.join("<br>");
-}
+    function gameLoop() { if (!gameEnded) updatePrediction(); draw(); requestAnimationFrame(gameLoop); }
 
-  function drawPowerUpInfo(){
-    const me = players[socket.id];
-    if(!me) return;
-    const active = [];
-    if(me.speedMultiplier>1) active.push("Speed Boost (Cyan)");
-    if(me.shootMultiplier>1) active.push("Fast Shoot (Orange)");
-    if(me.explosive) active.push("Explosive Shots (Red)");
-    powerUpInfo.innerHTML = active.join("<br>") || "No active power-ups";
-  }
+    function startGame() {
+      canShoot = true;
+      gameEnded = false;
+      gameOverMsg.style.display = "none";
+      initPrediction();
+      gameLoop();
+    }
 
-
-function lerp(a,b,t){ return a+(b-a)*t; }
-
-function gameLoop(){ if(!gameEnded) updatePrediction(); draw(); requestAnimationFrame(gameLoop); }
-
-function startGame(){
-  canShoot=true;
-  gameEnded=false;
-  gameOverMsg.style.display="none";
-  initPrediction();
-  gameLoop();
-}
-
-// --- NEON POINTER CURSOR ---
-const neonCursor = document.createElement("div");
-neonCursor.classList.add("neon-cursor");
-neonCursor.innerHTML = `
+    // --- NEON POINTER CURSOR ---
+    const neonCursor = document.createElement("div");
+    neonCursor.classList.add("neon-cursor");
+    neonCursor.innerHTML = `
   <svg viewBox="0 0 24 24">
     <path d="M0 0 L8 4 L4 8 Z" />
   </svg>
 `;
-document.body.appendChild(neonCursor);
+    document.body.appendChild(neonCursor);
 
-let x = 0, y = 0;
-document.addEventListener("mousemove", e => {
-  x = e.clientX;
-  y = e.clientY;
-  neonCursor.style.left = x + "px";
-  neonCursor.style.top = y + "px";
-});
-   // --- LOBBY CHAT ---
-  const chatInput = document.getElementById("chatInput");
-  const chatMessages = document.getElementById("chatMessages");
-  const sendChatBtn = document.getElementById("sendChatBtn");
+    let x = 0, y = 0;
+    document.addEventListener("mousemove", e => {
+      x = e.clientX;
+      y = e.clientY;
+      neonCursor.style.left = x + "px";
+      neonCursor.style.top = y + "px";
+    });
+    // --- LOBBY CHAT ---
+    const chatInput = document.getElementById("chatInput");
+    const chatMessages = document.getElementById("chatMessages");
+    const sendChatBtn = document.getElementById("sendChatBtn");
 
-  // Send message
-  sendChatBtn.onclick = () => {
-    const msg = chatInput.value.trim();
-    if(!msg || !currentRoom) return;
-    socket.emit("chat", { roomId: currentRoom, message: msg });
-    chatInput.value = "";
-  };
-
-  // Press Enter to send
-  chatInput.addEventListener("keydown", e => {
-    if(e.key === "Enter") sendChatBtn.click();
-  });
-
-  // Receive messages
-  socket.on("chatMessage", ({ name, text, color }) => {
-    const div = document.createElement("div");
-    div.textContent = `${name}: ${text}`;
-    div.style.color = color || "white";
-
-    // If the game is active, append to game chat
-    if(gameSec.classList.contains("active")){
-      gameChatMessages.appendChild(div);
-      gameChatMessages.scrollTop = gameChatMessages.scrollHeight;
-    } else {
-      // Lobby is active
-      chatMessages.appendChild(div);
-      chatMessages.scrollTop = chatMessages.scrollHeight;
-    }
-  });
-
-  // --- IN-GAME CHAT ---
-  const gameChatInput = document.getElementById("gameChatInput");
-  const gameChatMessages = document.getElementById("gameChatMessages");
-
-  gameChatInput.addEventListener("keydown", e => {
-    if(e.key === "Enter"){
-      const msg = gameChatInput.value.trim();
-      if(!msg || !currentRoom) return;
+    // Send message
+    sendChatBtn.onclick = () => {
+      const msg = chatInput.value.trim();
+      if (!msg || !currentRoom) return;
       socket.emit("chat", { roomId: currentRoom, message: msg });
-      gameChatInput.value = "";
-    }
-  });
+      chatInput.value = "";
+    };
+
+    // Press Enter to send
+    chatInput.addEventListener("keydown", e => {
+      if (e.key === "Enter") sendChatBtn.click();
+    });
+
+    // Receive messages
+    socket.on("chatMessage", ({ name, text, color }) => {
+      const div = document.createElement("div");
+      div.textContent = `${name}: ${text}`;
+      div.style.color = color || "white";
+
+      // If the game is active, append to game chat
+      if (gameSec.classList.contains("active")) {
+        gameChatMessages.appendChild(div);
+        gameChatMessages.scrollTop = gameChatMessages.scrollHeight;
+      } else {
+        // Lobby is active
+        chatMessages.appendChild(div);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+      }
+    });
+
+    // --- IN-GAME CHAT ---
+    const gameChatInput = document.getElementById("gameChatInput");
+    const gameChatMessages = document.getElementById("gameChatMessages");
+
+    gameChatInput.addEventListener("keydown", e => {
+      if (e.key === "Enter") {
+        const msg = gameChatInput.value.trim();
+        if (!msg || !currentRoom) return;
+        socket.emit("chat", { roomId: currentRoom, message: msg });
+        gameChatInput.value = "";
+      }
+    });
 
 
-</script>
+  </script>
 </body>
+
 </html>
