@@ -494,24 +494,19 @@
       }
 
       explosions.forEach(exp => {
-        const r = exp.radius || 50;
-        const alpha = Math.max(0, exp.timer / 20); // fade out: 1 → 0
-
+        const alpha = Math.max(0, exp.timer / 20);
         ctx.save();
-        ctx.globalAlpha = alpha * 0.8; // multiply by 0.8 for overall transparency
-        ctx.shadowColor = "orange";
-        ctx.shadowBlur = 20;
+        ctx.globalAlpha = alpha * 0.8;
         ctx.fillStyle = "orange";
         ctx.beginPath();
-        ctx.arc(exp.x, exp.y, r, 0, Math.PI * 2);
+        ctx.arc(exp.x, exp.y, exp.radius, 0, Math.PI * 2); // <-- use exp.radius exactly
         ctx.fill();
-
-        ctx.lineWidth = 3;
         ctx.strokeStyle = "yellow";
+        ctx.lineWidth = 3;
         ctx.stroke();
-
         ctx.restore();
       });
+
 
 
 

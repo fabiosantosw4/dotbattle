@@ -9,6 +9,7 @@ const io = new Server(server);
 // === GAME WORLD DIMENSIONS ===
 const GAME_WIDTH = 1800;
 const GAME_HEIGHT = 1300;
+const EXPLOSION_RADIUS = 80;
 app.use(express.static("public"));
 
 const rooms = {}; // { roomId: { players:{id:player}, powerUps:[], projectiles:[], gameStarted } }
@@ -73,24 +74,28 @@ setInterval(() => {
         const player = room.players[id];
         if (player.health <= 0) continue;
 
-        // Prevent self-damage
+        // Prevent self-damage entirely for explosive projectiles
         if (id === p.ownerId) continue;
 
         const dx = player.x - p.x;
         const dy = player.y - p.y;
         const dist = Math.hypot(dx, dy);
 
-        if (dist < projRadius + 32.5) { // 32.5 = player radius
+        if (dist < projRadius + 32.5) { // direct hit radius
           if (p.explosive) {
-            triggerExplosion(room, p.x, p.y, 80, p.ownerId);
+            // Explosive projectile: trigger explosion and mark projectile as hit
+            triggerExplosion(room, p.x, p.y, 80, p.ownerId, roomId);
             p.hit = true;
           } else {
-            player.health -= 20; // normal projectile damage
+            // Normal projectile: damage player directly
+            player.health -= 20;
             p.hit = true;
             if (player.health <= 0) resetPlayer(player);
           }
         }
       }
+
+
     });
 
 
@@ -144,101 +149,98 @@ setInterval(() => {
       }
     });
 
-  function triggerExplosion(room, x, y, radius, ownerId) {
-    let hitSomething = false; // track if this explosion touched anything
+    function triggerExplosion(room, x, y, ownerId) {
+      const radius = EXPLOSION_RADIUS;
+      for (const id in room.players) {
+        const p = room.players[id];
+        if (p.health <= 0) continue;
+        if (id === ownerId) continue; // ignore owner
 
-    for (const id in room.players) {
-      const p = room.players[id];
-      if (p.health <= 0) continue;
+        const PLAYER_RADIUS = 32.5; // same as avatar radius
+        const dx = p.x - x;
+        const dy = p.y - y;
+        const dist = Math.hypot(dx, dy);
 
-      const dx = p.x - x;
-      const dy = p.y - y;
-      const dist = Math.hypot(dx, dy);
-
-      if (dist < radius) {
-        // Damage scales with distance
-        const damage = Math.floor(40 * (1 - dist / radius));
-        p.health -= damage;
-
-        if (p.health <= 0 && room.players[ownerId]) {
-          room.players[ownerId].score += 1;
-          resetPlayer(p);
+        // include player radius in collision check
+        if (dist < radius + PLAYER_RADIUS) {
+          // scale damage based on distance from explosion edge to player center
+          const effectiveDist = Math.max(0, dist - PLAYER_RADIUS);
+          const damage = Math.floor(40 * (1 - effectiveDist / radius));
+          p.health -= damage;
+          if (p.health <= 0) resetPlayer(p);
         }
-
-        hitSomething = true; // touched a player
-      }
     }
 
-    // Optional: mark the explosion for client visual effect
+    // mark for client
     if (!room.explosions) room.explosions = [];
     room.explosions.push({ x, y, radius, timer: 20 });
 
-    // Trigger explosion sound only once per explosion
-    if (hitSomething) {
-      io.to(Object.keys(room.players)).emit("playExplosionSound", { x, y });
-    }
+    // Send explosion sound event
+    io.to(roomId).emit("playExplosionSound", { x, y });
   }
 
 
 
 
 
-    room.powerUps = room.powerUps.filter(pu => !pu.collected);
 
-    // Reduce power-up timer
-    for (const id in room.players) {
-      const p = room.players[id];
-      if (p.powerUpTimer > 0) {
-        p.powerUpTimer--;
-        if (p.powerUpTimer === 0) {
-          p.speedMultiplier = 1;
-          p.shootMultiplier = 1;
-          p.SHOOTcd = 450;
+
+  room.powerUps = room.powerUps.filter(pu => !pu.collected);
+
+  // Reduce power-up timer
+  for (const id in room.players) {
+    const p = room.players[id];
+    if (p.powerUpTimer > 0) {
+      p.powerUpTimer--;
+      if (p.powerUpTimer === 0) {
+        p.speedMultiplier = 1;
+        p.shootMultiplier = 1;
+        p.SHOOTcd = 450;
+      }
+    }
+
+    // Check max score
+    if (p.score >= 5) {
+      io.to(roomId).emit("gameOver", { winner: p.name });
+      delete rooms[roomId];
+      break;
+    }
+  }
+
+  // Randomly spawn power-ups
+  if (Math.random() < 0.0060) {
+    const types = ["speed", "shoot", "explosive"];
+    let x, y;
+    let safe = false;
+
+    while (!safe) {
+      x = Math.random() * (GAME_WIDTH - 20) + 10;
+      y = Math.random() * (GAME_HEIGHT - 20) + 10;
+
+      // check collision with all obstacles
+      safe = true;
+      room.obstacles.forEach(o => {
+        const size = 10;
+        if (x + size > o.x && x - size < o.x + o.w &&
+          y + size > o.y && y - size < o.y + o.h) {
+          safe = false;
         }
-      }
-
-      // Check max score
-      if (p.score >= 5) {
-        io.to(roomId).emit("gameOver", { winner: p.name });
-        delete rooms[roomId];
-        break;
-      }
+      });
     }
 
-    // Randomly spawn power-ups
-    if (Math.random() < 0.0050) {
-      const types = ["speed", "shoot", "explosive"];
-      let x, y;
-      let safe = false;
-
-      while (!safe) {
-        x = Math.random() * (GAME_WIDTH - 20) + 10;
-        y = Math.random() * (GAME_HEIGHT - 20) + 10;
-
-        // check collision with all obstacles
-        safe = true;
-        room.obstacles.forEach(o => {
-          const size = 10;
-          if (x + size > o.x && x - size < o.x + o.w &&
-            y + size > o.y && y - size < o.y + o.h) {
-            safe = false;
-          }
-        });
-      }
-
-      room.powerUps.push({ x, y, size: 10, type: types[Math.floor(Math.random() * types.length)] });
-    }
-
-
-
-    io.to(roomId).emit("state", {
-      players: room.players,
-      powerUps: room.powerUps,
-      projectiles: room.projectiles,
-      obstacles: room.obstacles,
-      explosions: room.explosions || []
-    });
+    room.powerUps.push({ x, y, size: 10, type: types[Math.floor(Math.random() * types.length)] });
   }
+
+
+
+  io.to(roomId).emit("state", {
+    players: room.players,
+    powerUps: room.powerUps,
+    projectiles: room.projectiles,
+    obstacles: room.obstacles,
+    explosions: room.explosions || []
+  });
+}
 }, 1000 / 60);
 
 // --- SOCKET CONNECTION ---
