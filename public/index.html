@@ -370,10 +370,10 @@
 
       const baseSpeed = 2;
       let dx = 0, dy = 0;
-      if (keys["ArrowUp"]) dy -= baseSpeed * me.speedMultiplier;
-      if (keys["ArrowDown"]) dy += baseSpeed * me.speedMultiplier;
-      if (keys["ArrowLeft"]) dx -= baseSpeed * me.speedMultiplier;
-      if (keys["ArrowRight"]) dx += baseSpeed * me.speedMultiplier;
+      if (keys["w"]) dy -= baseSpeed * me.speedMultiplier;
+      if (keys["s"]) dy += baseSpeed * me.speedMultiplier;
+      if (keys["a"]) dx -= baseSpeed * me.speedMultiplier;
+      if (keys["d"]) dx += baseSpeed * me.speedMultiplier;
 
       let newX = me.x + dx;
       let newY = me.y + dy;
@@ -531,9 +531,9 @@
       const me = players[socket.id];
       if (!me) return;
       const active = [];
-      if (me.speedMultiplier > 1) active.push("Speed Boost (Cyan)");
-      if (me.shootMultiplier > 1) active.push("Fast Shoot (Orange)");
-      if (me.explosive) active.push("Explosive Shots (Red)");
+      if (me.speedMultiplier > 1) active.push(`Speed Boost (Cyan) - ${Math.ceil(me.powerUpTimer / 60)}s`);
+      if (me.shootMultiplier > 1) active.push(`Fast Shoot (Orange) - ${Math.ceil(me.powerUpTimer / 60)}s`);
+      if (me.explosive) active.push(`Explosive Shots (Red) - ${Math.ceil(me.powerUpTimer / 60)}s`);
       powerUpInfo.innerHTML = active.join("<br>") || "No active power-ups";
     }
 
