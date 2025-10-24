@@ -286,7 +286,7 @@ setInterval(() => {
 
 
     // Randomly spawn power-ups
-    if (Math.random() < 0.0017) {
+    if (Math.random() < 0.0020) {
       const types = ["speed", "shoot", "explosive"];
       let x, y;
       let safe = false;
@@ -312,12 +312,30 @@ setInterval(() => {
 
 
     io.to(roomId).emit("state", {
-      players: room.players,
+      players: Object.fromEntries(
+        Object.entries(room.players).map(([id, p]) => [
+          id,
+          {
+            id: p.id,
+            name: p.name,
+            x: p.x,
+            y: p.y,
+            color: p.color,
+            health: p.health,
+            score: p.score,
+            speedMultiplier: p.speedMultiplier,
+            shootMultiplier: p.shootMultiplier,
+            explosive: p.explosive,
+            timers: p.timers || {}   // 👈 send active power-up timers
+          }
+        ])
+      ),
       powerUps: room.powerUps,
       projectiles: room.projectiles,
       obstacles: room.obstacles,
       explosions: room.explosions || []
     });
+
   }
 }, 1000 / 60);
 
@@ -383,14 +401,19 @@ io.on("connection", socket => {
 
   socket.on("startGame", roomId => {
     const room = rooms[roomId];
-    if (!room || socket.id !== room.hostId) return;
+    if (!room) return;
+
+    // Use isHost property of player object to check
+    const player = room.players[socket.id];
+    if (!player || !player.isHost) return;
+
     room.gameStarted = true;
 
     // === RANDOM MAP GENERATION ===
-    const obstacleCount = 20; // tweak for density
+    const obstacleCount = 20;
     room.obstacles = [];
 
-    const OBSTACLE_MARGIN = 100; // minimum distance from any player
+    const OBSTACLE_MARGIN = 100;
     for (let i = 0; i < obstacleCount; i++) {
       const w = Math.random() * 150 + 50;
       const h = Math.random() * 150 + 50;
@@ -402,7 +425,6 @@ io.on("connection", socket => {
         y = Math.random() * (GAME_HEIGHT - h);
 
         valid = true;
-        // Check distance to all players
         for (const id in room.players) {
           const p = room.players[id];
           const closestX = Math.max(x, Math.min(p.x, x + w));
@@ -411,7 +433,7 @@ io.on("connection", socket => {
           const dy = p.y - closestY;
           const dist = Math.hypot(dx, dy);
           if (dist < OBSTACLE_MARGIN) {
-            valid = false; // too close, re-roll
+            valid = false;
             break;
           }
         }
@@ -420,14 +442,16 @@ io.on("connection", socket => {
       room.obstacles.push({ x, y, w, h });
     }
 
-
     // === INITIAL POWERUPS ===
-    room.powerUps.push({ x: 100, y: 100, size: 10, type: "speed" });
-    room.powerUps.push({ x: 700, y: 500, size: 10, type: "shoot" });
+    room.powerUps = [
+      { x: 100, y: 100, size: 10, type: "speed" },
+      { x: 700, y: 500, size: 10, type: "shoot" }
+    ];
 
-    // Send map data to all players
+    // Notify clients
     io.to(roomId).emit("gameStarted", { obstacles: room.obstacles });
   });
+
 
 
   socket.on("move", ({ roomId, keys }) => {

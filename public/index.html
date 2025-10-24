@@ -12,7 +12,6 @@
   <!-- MENU -->
   <section id="menu" class="active">
     <h1>Dot Battle</h1>
-
     <div class="menu-options">
       <!-- CREATE ROOM -->
       <div class="menu-card">
@@ -151,58 +150,72 @@
     let avatarDataJoin = null;
 
     // --- CROPPING & CIRCULAR AVATAR ---
-    function cropAvatarToCircle(file, size = 128, callback, previewEl) {
+    function cropAvatarToCircle(file, size = 96, callback) {
       const reader = new FileReader();
       reader.onload = e => {
         const img = new Image();
         img.onload = () => {
           const canvas = document.createElement("canvas");
-          canvas.width = size;
-          canvas.height = size;
+          canvas.width = canvas.height = size;
           const ctx = canvas.getContext("2d");
 
-          // Crop centered square
-          const minSide = Math.min(img.width, img.height);
-          const sx = (img.width - minSide) / 2;
-          const sy = (img.height - minSide) / 2;
+          // Crop center square
+          const cropSize = Math.min(img.width, img.height);
+          const sx = (img.width - cropSize) / 2;
+          const sy = (img.height - cropSize) / 2;
 
-          // Draw circular clipped image
+          // Draw circle mask
           ctx.save();
           ctx.beginPath();
           ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
-          ctx.closePath();
           ctx.clip();
-          ctx.drawImage(img, sx, sy, minSide, minSide, 0, 0, size, size);
+
+          ctx.drawImage(img, sx, sy, cropSize, cropSize, 0, 0, size, size);
           ctx.restore();
 
-          const dataUrl = canvas.toDataURL("image/png");
-          callback(dataUrl);
-
-          if (previewEl) {
-            previewEl.src = dataUrl;
-            previewEl.style.display = "block";
-          }
+          callback(canvas.toDataURL("image/png"));
         };
         img.src = e.target.result;
       };
       reader.readAsDataURL(file);
     }
 
+
     // --- CREATE AVATAR ---
-    avatarCreateInput.addEventListener("change", e => {
+    avatarCreateInput.addEventListener("change", (e) => {
       const file = e.target.files[0];
       if (!file) return;
-      const preview = document.getElementById("avatarPreviewCreate");
-      cropAvatarToCircle(file, 128, dataUrl => avatarDataCreate = dataUrl, preview);
+
+      if (!file.type.startsWith("image/")) {
+        alert("Please select a valid image file (JPEG, PNG, etc.)");
+        return;
+      }
+
+      cropAvatarToCircle(file, 96, dataUrl => {
+        avatarDataCreate = dataUrl;
+        avatarPreviewCreate.src = dataUrl; // fixed element
+        avatarPreviewCreate.style.display = "block";
+      });
     });
 
+
     // --- JOIN AVATAR ---
-    avatarJoinInput.addEventListener("change", e => {
+    avatarJoinInput.addEventListener("change", (e) => {
       const file = e.target.files[0];
       if (!file) return;
-      const preview = document.getElementById("avatarPreviewJoin");
-      cropAvatarToCircle(file, 128, dataUrl => avatarDataJoin = dataUrl, preview);
+
+      if (!file.type.startsWith("image/")) {
+        alert("Please select a valid image file (JPEG, PNG, etc.)");
+        return;
+      }
+
+      cropAvatarToCircle(file, 96, dataUrl => {
+        avatarDataJoin = dataUrl;
+        avatarPreviewJoin.src = dataUrl; // fixed element
+        avatarPreviewJoin.style.display = "block";
+      });
     });
+
 
     // --- VALID NICKNAME ---
     function getValidName(name) {
@@ -215,21 +228,37 @@
     // --- CREATE / JOIN ROOM ---
     createRoomBtn.onclick = () => {
       const name = getValidName(nicknameCreate.value);
-      isHost = true;
-      socket.emit("createRoom", { name, avatar: avatarDataCreate });
+      const defaultAvatar = "/assets/default.png";
+
+      socket.emit("createRoom", { name, avatar: avatarDataCreate || defaultAvatar });
+      isHost = true; // ✅ important
     };
+
 
     joinRoomBtn.onclick = () => {
       const name = getValidName(nicknameJoin.value);
       const roomId = roomIdInput.value.trim().toUpperCase();
       if (!roomId) return alert("Enter Room ID");
       isHost = false;
-      socket.emit("joinRoom", { roomId, playerName: name, avatar: avatarDataJoin });
+
+      // send the circular avatar to the server
+      socket.emit("joinRoom", {
+        roomId,
+        playerName: name,
+        avatar: avatarDataJoin || null // fallback if no avatar chosen
+      });
     };
 
     // --- SOCKET EVENTS ---
-    socket.on("roomCreated", ({ roomId }) => { currentRoom = roomId; showLobby(); });
-    socket.on("joinedRoom", ({ roomId }) => { currentRoom = roomId; showLobby(); });
+    socket.on("roomCreated", ({ roomId }) => {
+      currentRoom = roomId;
+      showLobby();
+    });
+
+    socket.on("joinedRoom", ({ roomId }) => {
+      currentRoom = roomId;
+      showLobby();
+    });
 
     socket.on("roomPlayers", (roomPlayers) => {
       playerList.innerHTML = "";
@@ -365,49 +394,58 @@
     }
     function updatePrediction() {
       if (gameEnded) return;
+
       const me = players[socket.id];
-      if (!me) return;
-
       const baseSpeed = 2;
+      const speedMult = me ? me.speedMultiplier || 1 : 1;
+
       let dx = 0, dy = 0;
-      if (keys["w"]) dy -= baseSpeed * me.speedMultiplier;
-      if (keys["s"]) dy += baseSpeed * me.speedMultiplier;
-      if (keys["a"]) dx -= baseSpeed * me.speedMultiplier;
-      if (keys["d"]) dx += baseSpeed * me.speedMultiplier;
+      if (keys["w"]) dy -= baseSpeed * speedMult;
+      if (keys["s"]) dy += baseSpeed * speedMult;
+      if (keys["a"]) dx -= baseSpeed * speedMult;
+      if (keys["d"]) dx += baseSpeed * speedMult;
 
-      let newX = me.x + dx;
-      let newY = me.y + dy;
-      const radius = 32.5; // half of avatarSize = 65/2
+      // fallback to predicted pos if 'me' not ready yet
+      const curX = me ? me.x : predictedX;
+      const curY = me ? me.y : predictedY;
 
-      // --- CANVAS BOUNDARY COLLISION ---
+      let newX = curX + dx;
+      let newY = curY + dy;
+      const radius = 32.5;
+
+      // --- boundaries ---
       newX = Math.max(radius, Math.min(canvas.width - radius, newX));
       newY = Math.max(radius, Math.min(canvas.height - radius, newY));
 
-      // --- PLAYER COLLISION ---
+      // --- collisions (approximate) ---
       for (const id in players) {
         if (id === socket.id) continue;
         const p = players[id];
-        const otherRadius = 32.5;
-        const distX = newX - p.x;
-        const distY = newY - p.y;
-        const distance = Math.hypot(distX, distY);
-        const minDist = radius + otherRadius;
-        if (distance < minDist) {
-          // Push back along the collision vector
-          const overlap = minDist - distance;
-          const angle = Math.atan2(distY, distX);
+        const dist = Math.hypot(newX - p.x, newY - p.y);
+        const minDist = radius + 32.5;
+        if (dist < minDist) {
+          const overlap = minDist - dist;
+          const angle = Math.atan2(newY - p.y, newX - p.x);
           newX += Math.cos(angle) * overlap;
           newY += Math.sin(angle) * overlap;
         }
       }
 
-      // Apply updated position
-      me.x = newX;
-      me.y = newY;
+      // update prediction
+      predictedX = lerp(predictedX, newX, 0.2);
+      predictedY = lerp(predictedY, newY, 0.2);
 
-      // Send updated keys to server
-      socket.emit("move", { roomId: currentRoom, keys });
+      if (me) {
+        me.x = newX;
+        me.y = newY;
+      }
+
+      // always send movement to server
+      if (currentRoom) {
+        socket.emit("move", { roomId: currentRoom, keys });
+      }
     }
+
 
 
     // --- DRAW ---
